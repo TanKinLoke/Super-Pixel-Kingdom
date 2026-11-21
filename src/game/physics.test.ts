@@ -5,13 +5,15 @@ import {
   evaluateEnemyCollision,
   getStompReward,
   PHYSICS,
+  stepMovingPlatform,
   stepPlayerHorizPhysics,
   stepPlayerJumpPhysics,
   TILE_SIZE,
   validateZoneReachability,
 } from './physics';
 import { LEVELS } from './levels';
-import { ActiveEnemy, InputState } from './types';
+import { GameEngine } from './engine';
+import { ActiveEnemy, ActiveMovingPlatform, InputState } from './types';
 
 function emptyInput(): InputState {
   return {
@@ -75,6 +77,84 @@ test('all 10 levels pass reachability, spawn, Star Coin, and objective checks', 
       );
     }
   });
+});
+
+test('every moving platform travels at its configured speed and returns to both endpoints', () => {
+  const dt = 1 / 60;
+
+  for (const level of LEVELS) {
+    for (const definition of level.mainZone.movingPlatforms) {
+      const platform: ActiveMovingPlatform = {
+        ...definition,
+        dx: 0,
+        dy: 0,
+        t: 0,
+        dir: 1,
+      };
+      const pathLength = Math.hypot(definition.endX - definition.x, definition.endY - definition.y);
+      const frameCount = Math.ceil((pathLength * 4 / definition.speed) / dt);
+      let reachedEnd = false;
+      let returnedToStart = false;
+
+      for (let frame = 0; frame < frameCount; frame++) {
+        stepMovingPlatform(platform, definition, dt);
+        assert.ok(
+          Math.hypot(platform.dx, platform.dy) <= definition.speed * dt + 1e-6,
+          `Level ${level.id} platform ${definition.id} exceeded its configured speed`
+        );
+        reachedEnd ||= platform.t === 1;
+        returnedToStart ||= frame > 0 && platform.t === 0 && platform.dir === 1;
+      }
+
+      assert.ok(reachedEnd, `Level ${level.id} platform ${definition.id} never reached its far endpoint`);
+      assert.ok(returnedToStart, `Level ${level.id} platform ${definition.id} never returned to its start`);
+    }
+  }
+});
+
+test('Stage 1-2 bridges its unjumpable chasm with a reachable moving lift', () => {
+  const level = LEVELS.find((candidate) => candidate.id === '1-2');
+  assert.ok(level);
+  const lift = level.mainZone.movingPlatforms.find((platform) => platform.id === 'cavern_lift_1');
+  assert.ok(lift, 'Stage 1-2 must define its cavern lift');
+
+  const rise = PHYSICS.RUN_JUMP_VEL ** 2 / (2 * PHYSICS.GRAVITY);
+  const ascentTime = Math.abs(PHYSICS.RUN_JUMP_VEL) / PHYSICS.GRAVITY;
+  const fallTime = Math.sqrt((2 * rise) / (PHYSICS.GRAVITY * PHYSICS.FALL_GRAVITY_MULT));
+  const maxRunJumpDistance = PHYSICS.RUN_MAX_SPEED * (ascentTime + fallTime);
+  const chasmWidth = (108 - 97) * TILE_SIZE;
+
+  assert.ok(chasmWidth > maxRunJumpDistance, 'The chasm should require the moving lift');
+  assert.equal(lift.x, 97 * TILE_SIZE, 'The lift should meet the near shore');
+  assert.equal(lift.endX + lift.w, 107 * TILE_SIZE, 'The far end should leave only a one-tile landing gap');
+  assert.ok(12 * TILE_SIZE - lift.y <= rise, 'The near-shore jump to the lift should be reachable');
+});
+
+test('campaign progression advances through every stage and returns to the map after the finale', () => {
+  const transitions: number[] = [];
+  let returnedToMap = false;
+  const engine = Object.assign(Object.create(GameEngine.prototype), {
+    levelIndex: 0,
+    campaignMode: true,
+    startLevel(index: number, keepForm: boolean, campaign: boolean) {
+      assert.equal(keepForm, true);
+      assert.equal(campaign, true);
+      transitions.push(index);
+    },
+    openWorldMap() {
+      returnedToMap = true;
+    },
+  }) as { levelIndex: number; nextLevel(): void };
+
+  for (let index = 0; index < LEVELS.length - 1; index++) {
+    engine.levelIndex = index;
+    engine.nextLevel();
+  }
+  engine.levelIndex = LEVELS.length - 1;
+  engine.nextLevel();
+
+  assert.deepEqual(transitions, LEVELS.slice(1).map((level) => level.index));
+  assert.equal(returnedToMap, true);
 });
 
 test('coyote time allows jumping briefly after walking off a ledge', () => {

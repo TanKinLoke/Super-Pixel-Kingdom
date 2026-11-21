@@ -12,6 +12,7 @@ import {
   isQuestionBlock,
   isSolidTile,
   PHYSICS,
+  stepMovingPlatform,
   stepPlayerHorizPhysics,
   stepPlayerJumpPhysics,
   TILE_SIZE,
@@ -1002,30 +1003,9 @@ export class GameEngine {
 
   private updateMovingPlatforms(dt: number): void {
     for (const mp of this.movingPlatforms) {
-      const totalDx = mp.endX - mp.x;
-      const totalDy = mp.endY - mp.y;
-      const oldX = mp.x;
-      const oldY = mp.y;
-      const dist = Math.hypot(totalDx, totalDy);
-      if (dist < 1) continue;
-
-      const step = (mp.speed * dt) / dist;
-      mp.t += step * mp.dir;
-      if (mp.t >= 1) {
-        mp.t = 1;
-        mp.dir = -1;
-      } else if (mp.t <= 0) {
-        mp.t = 0;
-        mp.dir = 1;
-      }
-
-      // Smooth ping-pong between original start & end stored in zone
       const def = this.zone.movingPlatforms.find((d) => d.id === mp.id);
       if (!def) continue;
-      mp.x = def.x + (def.endX - def.x) * mp.t;
-      mp.y = def.y + (def.endY - def.y) * mp.t;
-      mp.dx = mp.x - oldX;
-      mp.dy = mp.y - oldY;
+      stepMovingPlatform(mp, def, dt);
     }
   }
 

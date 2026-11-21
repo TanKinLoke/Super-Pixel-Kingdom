@@ -1,6 +1,8 @@
 import {
+  ActiveMovingPlatform,
   ActiveEnemy,
   InputState,
+  MovingPlatformDef,
   PlayerForm,
   PlayerState,
   TileKind,
@@ -41,6 +43,38 @@ export const PHYSICS = {
   FIRE_COOLDOWN: 0.24,
   SHELL_SPEED: 360,
 } as const;
+
+export function stepMovingPlatform(
+  platform: ActiveMovingPlatform,
+  definition: MovingPlatformDef,
+  dt: number
+): void {
+  const pathX = definition.endX - definition.x;
+  const pathY = definition.endY - definition.y;
+  const pathLength = Math.hypot(pathX, pathY);
+  const oldX = platform.x;
+  const oldY = platform.y;
+
+  if (pathLength < 1) {
+    platform.dx = 0;
+    platform.dy = 0;
+    return;
+  }
+
+  platform.t += (platform.speed * dt / pathLength) * platform.dir;
+  if (platform.t >= 1) {
+    platform.t = 1;
+    platform.dir = -1;
+  } else if (platform.t <= 0) {
+    platform.t = 0;
+    platform.dir = 1;
+  }
+
+  platform.x = definition.x + pathX * platform.t;
+  platform.y = definition.y + pathY * platform.t;
+  platform.dx = platform.x - oldX;
+  platform.dy = platform.y - oldY;
+}
 
 export const STOMP_COMBO_TABLE = [100, 200, 400, 800, 1000] as const;
 
@@ -368,7 +402,7 @@ export function validateZoneReachability(
   let maxGapTiles = 0;
   for (let x = 0; x < width; x++) {
     let hasSupport = false;
-    for (let y = 0; y < height; y++) {
+    for (let y = Math.floor(height / 2); y < height; y++) {
       const t = tiles[y]?.[x];
       if (t && (isSolidTile(t) || isOneWayPlatform(t)) && !isHazardTile(t)) {
         hasSupport = true;
